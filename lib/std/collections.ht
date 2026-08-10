@@ -1,0 +1,59 @@
+struct List
+{
+    priv var _items = [];
+
+    pub proc push(item)
+    {
+        array_push(this._items, item);
+    }
+
+    pub proc pop()
+    {
+        return array_pop(this._items);
+    }
+
+    pub proc get(index)
+    {
+        return this._items[index];
+    }
+
+    pub get length
+    {
+        return array_length(this._items);
+    }
+
+    pub proc clear()
+    {
+        this._items = [];
+    }
+}
+
+struct Map
+{
+    priv var _keys = [];
+    priv var _values = [];
+
+    pub proc set(key, val)
+    {
+        var idx = array_index_of(this._keys, key);
+        if idx != -1
+        {
+            this._values[idx] = val;
+        }
+        else
+        {
+            array_push(this._keys, key);
+            array_push(this._values, val);
+        }
+    }
+
+    pub proc get(key)
+    {
+        var idx = array_index_of(this._keys, key);
+        if idx != -1
+        {
+            return this._values[idx];
+        }
+        return null;
+    }
+}

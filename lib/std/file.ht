@@ -1,0 +1,24 @@
+struct File
+{
+    static proc read_text(file_path)
+    {
+        if !file_exists(file_path)
+        {
+            printstr("Error: File not found - ");
+            printstr(file_path);
+            printstr("\n");
+            return "";
+        }
+        return file_read_all_text(file_path);
+    }
+
+    static proc write_text(file_path, content)
+    {
+        return file_write_all_text(file_path, content);
+    }
+
+    static proc exists(file_path)
+    {
+        return file_exists(file_path);
+    }
+}
