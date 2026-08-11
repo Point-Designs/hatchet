@@ -1,125 +1,131 @@
-export enum TokenType {
-  Struct, Extends, Proc, Var, Const, If, Else, Switch, Case, Default, Return,
-  Identifier, NumberLiteral, StringLiteral, InterpolatedString,
-  OpenBrace, CloseBrace, OpenParen, CloseParen, OpenBracket, CloseBracket,
-  Semicolon, Colon, Dot, Equals, Plus, Minus, Star, Slash,
-  FatArrow,
-  SafeNav,
-  NullCoalesce,
-  DotDot,
-  Comma,
-  EOF
-}
-
-export interface Token {
-  type: TokenType;
-  value: string;
-  line: number;
-}
+import { Token, TokenType } from "./tokens";
 
 export class Lexer {
   private source: string;
-  private cursor: number = 0;
+  private pos: number = 0;
   private line: number = 1;
 
   constructor(source: string) {
     this.source = source;
   }
 
-  public nextToken(): Token {
-    while (this.cursor < this.source.length) {
-      const char = this.source[this.cursor];
+  public tokenize(): Token[] {
+    const tokens: Token[] = [];
 
-      if (char === '\n') { this.line++; this.cursor++; continue; }
-      if (/\s/.test(char)) { this.cursor++; continue; }
+    while (this.pos < this.source.length) {
+      const char = this.source[this.pos];
 
-      if (char === '/' && this.source[this.cursor + 1] === '/') {
-        while (this.cursor < this.source.length && this.source[this.cursor] !== '\n') {
-          this.cursor++;
-        }
+      if (char === "\n") {
+        this.line++;
+        this.pos++;
         continue;
       }
 
-      if (char === '?' && this.source[this.cursor + 1] === '.') {
-        this.cursor += 2;
-        return { type: TokenType.SafeNav, value: "?.", line: this.line };
-      }
-      if (char === '?' && this.source[this.cursor + 1] === '?') {
-        this.cursor += 2;
-        return { type: TokenType.NullCoalesce, value: "??", line: this.line };
-      }
-      if (char === '=' && this.source[this.cursor + 1] === '>') {
-        this.cursor += 2;
-        return { type: TokenType.FatArrow, value: "=>", line: this.line };
-      }
-      if (char === '.' && this.source[this.cursor + 1] === '.') {
-        this.cursor += 2;
-        return { type: TokenType.DotDot, value: "..", line: this.line };
+      if (/\s/.test(char)) {
+        this.pos++;
+        continue;
       }
 
-      if (char === '{') { this.cursor++; return { type: TokenType.OpenBrace, value: '{', line: this.line }; }
-      if (char === '}') { this.cursor++; return { type: TokenType.CloseBrace, value: '}', line: this.line }; }
-      if (char === '(') { this.cursor++; return { type: TokenType.OpenParen, value: '(', line: this.line }; }
-      if (char === ')') { this.cursor++; return { type: TokenType.CloseParen, value: ')', line: this.line }; }
-      if (char === '[') { this.cursor++; return { type: TokenType.OpenBracket, value: '[', line: this.line }; }
-      if (char === ']') { this.cursor++; return { type: TokenType.CloseBracket, value: ']', line: this.line }; }
-      if (char === ';') { this.cursor++; return { type: TokenType.Semicolon, value: ';', line: this.line }; }
-      if (char === ':') { this.cursor++; return { type: TokenType.Colon, value: ':', line: this.line }; }
-      if (char === '.') { this.cursor++; return { type: TokenType.Dot, value: '.', line: this.line }; }
-      if (char === '=') { this.cursor++; return { type: TokenType.Equals, value: '=', line: this.line }; }
-      if (char === ',') { this.cursor++; return { type: TokenType.Comma, value: ',', line: this.line }; }
+      if (char === ":") {
+        tokens.push({ type: TokenType.Colon, value: ":", line: this.line });
+        this.pos++;
+        continue;
+      }
 
-      if (char === '$' && this.source[this.cursor + 1] === '"') {
-        this.cursor += 2;
-        let str = "";
-        while (this.cursor < this.source.length && this.source[this.cursor] !== '"') {
-          str += this.source[this.cursor];
-          this.cursor++;
+      if (char === ";") {
+        tokens.push({ type: TokenType.Semicolon, value: ";", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === "{") {
+        tokens.push({ type: TokenType.OpenBrace, value: "{", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === "}") {
+        tokens.push({ type: TokenType.CloseBrace, value: "}", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === "(") {
+        tokens.push({ type: TokenType.OpenParen, value: "(", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === ")") {
+        tokens.push({ type: TokenType.CloseParen, value: ")", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === "=") {
+        tokens.push({ type: TokenType.Equals, value: "=", line: this.line });
+        this.pos++;
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        let strVal = "";
+        const quote = char;
+        this.pos++;
+        while (this.pos < this.source.length && this.source[this.pos] !== quote) {
+          strVal += this.source[this.pos];
+          this.pos++;
         }
-        this.cursor++;
-        return { type: TokenType.InterpolatedString, value: str, line: this.line };
-      }
-
-      if (char === '"') {
-        this.cursor++;
-        let str = "";
-        while (this.cursor < this.source.length && this.source[this.cursor] !== '"') {
-          str += this.source[this.cursor];
-          this.cursor++;
-        }
-        this.cursor++;
-        return { type: TokenType.StringLiteral, value: str, line: this.line };
-      }
-
-      if (/[0-9]/.test(char)) {
-        let num = "";
-        while (this.cursor < this.source.length && /[0-9]/.test(this.source[this.cursor])) {
-          num += this.source[this.cursor];
-          this.cursor++;
-        }
-        return { type: TokenType.NumberLiteral, value: num, line: this.line };
+        this.pos++;
+        tokens.push({ type: TokenType.Literal, value: strVal, line: this.line });
+        continue;
       }
 
       if (/[a-zA-Z_]/.test(char)) {
         let ident = "";
-        while (this.cursor < this.source.length && /[a-zA-Z0-9_]/.test(this.source[this.cursor])) {
-          ident += this.source[this.cursor];
-          this.cursor++;
+        while (this.pos < this.source.length && /[a-zA-Z0-9_\.]/.test(this.source[this.pos])) {
+          ident += this.source[this.pos];
+          this.pos++;
         }
-        switch (ident) {
-          case "struct": return { type: TokenType.Struct, value: ident, line: this.line };
-          case "extends": return { type: TokenType.Extends, value: ident, line: this.line };
-          case "proc": return { type: TokenType.Proc, value: ident, line: this.line };
-          case "var": return { type: TokenType.Var, value: ident, line: this.line };
-          case "const": return { type: TokenType.Const, value: ident, line: this.line };
-          case "return": return { type: TokenType.Return, value: ident, line: this.line };
-          default: return { type: TokenType.Identifier, value: ident, line: this.line };
-        }
+
+        tokens.push(this.getKeywordToken(ident));
+        continue;
       }
 
-      this.cursor++;
+      if (/[0-9]/.test(char)) {
+        let num = "";
+        while (this.pos < this.source.length && /[0-9\.]/.test(this.source[this.pos])) {
+          num += this.source[this.pos];
+          this.pos++;
+        }
+        tokens.push({ type: TokenType.Literal, value: num, line: this.line });
+        continue;
+      }
+
+      this.pos++;
     }
 
-    return { type: TokenType.EOF, value: "", line: this.line };
+    tokens.push({ type: TokenType.EOF, value: "", line: this.line });
+    return tokens;
+  }
+
+  private getKeywordToken(ident: string): Token {
+    switch (ident) {
+      case "struct": return { type: TokenType.Struct, value: ident, line: this.line };
+      case "proc":
+      case "func": return { type: TokenType.Func, value: ident, line: this.line };
+      case "async": return { type: TokenType.Async, value: ident, line: this.line };
+      case "await": return { type: TokenType.Await, value: ident, line: this.line };
+      case "type": return { type: TokenType.Type, value: ident, line: this.line };
+      case "interface": return { type: TokenType.Interface, value: ident, line: this.line };
+      case "implements": return { type: TokenType.Implements, value: ident, line: this.line };
+      case "include": return { type: TokenType.Include, value: ident, line: this.line };
+      case "public": return { type: TokenType.Public, value: ident, line: this.line };
+      case "private": return { type: TokenType.Private, value: ident, line: this.line };
+      case "protected": return { type: TokenType.Protected, value: ident, line: this.line };
+      case "static": return { type: TokenType.Static, value: ident, line: this.line };
+      case "void": return { type: TokenType.Void, value: ident, line: this.line };
+      default: return { type: TokenType.Identifier, value: ident, line: this.line };
+    }
   }
 }

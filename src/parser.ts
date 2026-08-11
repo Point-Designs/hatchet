@@ -1,152 +1,254 @@
-import { Lexer, Token, TokenType } from "./lexer";
-
-export interface ProgramNode { type: "Program"; body: ASTNode[]; }
-export interface StructNode { type: "Struct"; name: string; parent?: string; members: ASTNode[]; }
-export interface ProcNode { type: "Proc"; name: string; params: string[]; body: ASTNode[]; isArrow?: boolean; }
-export interface VarDeclNode { type: "VarDecl"; isConst: boolean; name: string; value: ASTNode; }
-export interface DestructureNode { type: "Destructure"; names: string[]; value: ASTNode; }
-export interface InterpolatedStringNode { type: "InterpolatedString"; raw: string; }
-export interface BinaryOpNode { type: "BinaryOp"; op: string; left: ASTNode; right: ASTNode; }
-export interface LiteralNode { type: "Literal"; value: any; rawType: "string" | "number"; }
-export interface IdentifierNode { type: "Identifier"; name: string; }
-
-export type ASTNode =
-  | ProgramNode | StructNode | ProcNode | VarDeclNode 
-  | DestructureNode | InterpolatedStringNode | BinaryOpNode 
-  | LiteralNode | IdentifierNode;
+import { Token, TokenType } from "./tokens";
+import {
+  ProgramNode,
+  ASTNode,
+  IncludeNode,
+  TypeAliasNode,
+  InterfaceNode,
+  InterfaceMember,
+  StructNode,
+  FuncNode,
+  FuncParam,
+  VarDeclNode,
+  AccessModifier
+} from "./ast";
 
 export class Parser {
-  private lexer: Lexer;
-  private current: Token;
+  private tokens: Token[];
+  private pos: number = 0;
 
-  constructor(lexer: Lexer) {
-    this.lexer = lexer;
-    this.current = this.lexer.nextToken();
+  constructor(tokens: Token[]) {
+    this.tokens = tokens;
   }
 
-  private advance(): void { this.current = this.lexer.nextToken(); }
-
-  private eat(type: TokenType): void {
-    if (this.current.type === type) { this.advance(); }
-    else { throw new Error(`[Line ${this.current.line}] Expected token '${TokenType[type]}', got '${this.current.value}'`); }
-  }
-
-  public parse(): ProgramNode {
+  public parse(isHeader: boolean = false): ProgramNode {
     const body: ASTNode[] = [];
-    while (this.current.type !== TokenType.EOF) {
-      if (this.current.type === TokenType.Struct) body.push(this.parseStruct());
-      else if (this.current.type === TokenType.Proc) body.push(this.parseProc());
-      else this.advance();
+
+    while (!this.isAtEnd()) {
+      body.push(this.parseTopLevel(isHeader));
     }
-    return { type: "Program", body };
+
+    return {
+      type: "Program",
+      isHeader,
+      body
+    };
   }
 
-  private parseStruct(): StructNode {
-    this.eat(TokenType.Struct);
-    const name = this.current.value;
-    this.eat(TokenType.Identifier);
-
-    let parent: string | undefined;
-    if (this.current.type === TokenType.Extends) {
-      this.advance();
-      parent = this.current.value;
-      this.eat(TokenType.Identifier);
+  private parseTopLevel(isHeader: boolean): ASTNode {
+    if (this.match(TokenType.Include)) {
+      const pathToken = this.consume(TokenType.Literal, "Expected file path string for include");
+      this.match(TokenType.Semicolon);
+      return { type: "Include", path: pathToken.value } as IncludeNode;
     }
 
-    this.eat(TokenType.OpenBrace);
+    if (this.match(TokenType.Type)) {
+      const name = this.consume(TokenType.Identifier, "Expected type alias name").value;
+      this.consume(TokenType.Equals, "Expected '=' in type declaration");
+      const targetType = this.consumeTypeToken().value;
+      this.match(TokenType.Semicolon);
+      return { type: "TypeAlias", name, targetType } as TypeAliasNode;
+    }
+
+    if (this.match(TokenType.Interface)) {
+      return this.parseInterface();
+    }
+
+    if (this.match(TokenType.Struct)) {
+      return this.parseStruct(isHeader);
+    }
+
+    return this.parseFuncOrVar(isHeader);
+  }
+
+  private parseInterface(): InterfaceNode {
+    const name = this.consume(TokenType.Identifier, "Expected interface name").value;
+    this.consume(TokenType.OpenBrace, "Expected '{'");
+
+    const members: InterfaceMember[] = [];
+
+    while (!this.check(TokenType.CloseBrace) && !this.isAtEnd()) {
+      let isAsync = false;
+      if (this.match(TokenType.Async)) {
+        isAsync = true;
+      }
+
+      this.consume(TokenType.Func, "Expected 'func' or 'proc' signature inside interface");
+      const memberName = this.consume(TokenType.Identifier, "Expected method name").value;
+
+      this.consume(TokenType.OpenParen, "Expected '('");
+      const paramTypes: string[] = [];
+
+      if (!this.check(TokenType.CloseParen)) {
+        do {
+          this.consume(TokenType.Identifier, "Expected parameter name");
+          if (this.match(TokenType.Colon)) {
+            paramTypes.push(this.consumeTypeToken().value);
+          } else {
+            paramTypes.push("any");
+          }
+        } while (this.match(TokenType.Semicolon) || this.check(TokenType.CloseParen) ? false : true);
+      }
+
+      this.consume(TokenType.CloseParen, "Expected ')'");
+
+      let returnType = "void";
+      if (this.match(TokenType.Colon)) {
+        returnType = this.consumeTypeToken().value;
+      }
+
+      this.match(TokenType.Semicolon);
+      members.push({ name: memberName, isAsync, paramTypes, returnType });
+    }
+
+    this.consume(TokenType.CloseBrace, "Expected '}'");
+    return { type: "Interface", name, members };
+  }
+
+  private parseStruct(isHeader: boolean): StructNode {
+    const name = this.consume(TokenType.Identifier, "Expected struct name").value;
+    let implementsInterface: string | undefined;
+
+    if (this.match(TokenType.Implements)) {
+      implementsInterface = this.consume(TokenType.Identifier, "Expected interface name").value;
+    }
+
+    this.consume(TokenType.OpenBrace, "Expected '{'");
     const members: ASTNode[] = [];
-    while (this.current.type !== TokenType.CloseBrace && this.current.type !== TokenType.EOF) {
-      if (this.current.type === TokenType.Var || this.current.type === TokenType.Const) {
-        members.push(this.parseVarDecl());
-      } else if (this.current.type === TokenType.Proc) {
-        members.push(this.parseProc());
-      } else {
-        this.advance();
+
+    while (!this.check(TokenType.CloseBrace) && !this.isAtEnd()) {
+      members.push(this.parseFuncOrVar(isHeader));
+    }
+
+    this.consume(TokenType.CloseBrace, "Expected '}'");
+    return { type: "Struct", name, implementsInterface, members };
+  }
+
+  private parseFuncOrVar(isHeader: boolean): ASTNode {
+    let accessModifier: AccessModifier | undefined;
+    let isStatic = false;
+    let isAsync = false;
+
+    if (this.check(TokenType.Public) || this.check(TokenType.Private) || this.check(TokenType.Protected)) {
+      accessModifier = this.tokens[this.pos++].value as AccessModifier;
+    }
+
+    if (this.match(TokenType.Static)) {
+      isStatic = true;
+    }
+
+    if (this.match(TokenType.Async)) {
+      isAsync = true;
+    }
+
+    if (this.match(TokenType.Func)) {
+      const name = this.consume(TokenType.Identifier, "Expected function name").value;
+      this.consume(TokenType.OpenParen, "Expected '('");
+
+      const params: FuncParam[] = [];
+
+      if (!this.check(TokenType.CloseParen)) {
+        do {
+          const paramName = this.consume(TokenType.Identifier, "Expected parameter name").value;
+          let paramType: string | undefined;
+
+          if (this.match(TokenType.Colon)) {
+            paramType = this.consumeTypeToken().value;
+          }
+
+          params.push({ name: paramName, paramType });
+        } while (this.check(TokenType.CloseParen) ? false : true);
       }
-    }
-    this.eat(TokenType.CloseBrace);
-    return { type: "Struct", name, parent, members };
-  }
 
-  private parseProc(): ProcNode {
-    this.eat(TokenType.Proc);
-    const name = this.current.value;
-    this.eat(TokenType.Identifier);
-    this.eat(TokenType.OpenParen);
+      this.consume(TokenType.CloseParen, "Expected ')'");
 
-    const params: string[] = [];
-    if (this.current.type === TokenType.Identifier) {
-      params.push(this.current.value);
-      this.advance();
-    }
-    this.eat(TokenType.CloseParen);
-
-    if (this.current.type === TokenType.FatArrow) {
-      this.advance();
-      const expr = this.parseExpr();
-      this.eat(TokenType.Semicolon);
-      return { type: "Proc", name, params, body: [expr], isArrow: true };
-    }
-
-    this.eat(TokenType.OpenBrace);
-    const body: ASTNode[] = [];
-    while (this.current.type !== TokenType.CloseBrace && this.current.type !== TokenType.EOF) {
-      body.push(this.parseExpr());
-      if (this.current.type === TokenType.Semicolon) this.advance();
-    }
-    this.eat(TokenType.CloseBrace);
-    return { type: "Proc", name, params, body };
-  }
-
-  private parseVarDecl(): ASTNode {
-    const isConst = this.current.type === TokenType.Const;
-    this.advance();
-
-    if (this.current.type === TokenType.OpenBracket) {
-      this.advance();
-      const names: string[] = [];
-      while (this.current.type !== TokenType.CloseBracket) {
-        names.push(this.current.value);
-        this.eat(TokenType.Identifier);
-        if (this.current.type === TokenType.Comma) this.advance();
+      let returnType: string | undefined;
+      if (this.match(TokenType.Colon)) {
+        returnType = this.consumeTypeToken().value;
       }
-      this.eat(TokenType.CloseBracket);
-      this.eat(TokenType.Equals);
-      const value = this.parseExpr();
-      this.eat(TokenType.Semicolon);
-      return { type: "Destructure", names, value };
+
+      if (isHeader || this.match(TokenType.Semicolon)) {
+        return {
+          type: "Func",
+          name,
+          accessModifier,
+          isStatic,
+          isAsync,
+          params,
+          returnType,
+          isHeaderSignature: true
+        } as FuncNode;
+      }
+
+      this.consume(TokenType.OpenBrace, "Expected '{'");
+      const body: ASTNode[] = [];
+
+      while (!this.check(TokenType.CloseBrace) && !this.isAtEnd()) {
+        body.push(this.parseFuncOrVar(isHeader));
+      }
+
+      this.consume(TokenType.CloseBrace, "Expected '}'");
+
+      return {
+        type: "Func",
+        name,
+        accessModifier,
+        isStatic,
+        isAsync,
+        params,
+        returnType,
+        body,
+        isHeaderSignature: false
+      } as FuncNode;
     }
 
-    const name = this.current.value;
-    this.eat(TokenType.Identifier);
-    this.eat(TokenType.Equals);
-    const value = this.parseExpr();
-    this.eat(TokenType.Semicolon);
+    const varName = this.consume(TokenType.Identifier, "Expected variable name").value;
+    let varType: string | undefined;
 
-    return { type: "VarDecl", isConst, name, value };
+    if (this.match(TokenType.Colon)) {
+      varType = this.consumeTypeToken().value;
+    }
+
+    this.consume(TokenType.Equals, "Expected '='");
+    const valueToken = this.consume(TokenType.Literal, "Expected value");
+    this.match(TokenType.Semicolon);
+
+    return {
+      type: "VarDecl",
+      name: varName,
+      accessModifier,
+      isStatic,
+      varType,
+      value: { type: "Literal", value: valueToken.value }
+    } as VarDeclNode;
   }
 
-  private parseExpr(): ASTNode {
-    if (this.current.type === TokenType.InterpolatedString) {
-      const raw = this.current.value;
-      this.advance();
-      return { type: "InterpolatedString", raw };
+  private consumeTypeToken(): Token {
+    if (this.check(TokenType.Void) || this.check(TokenType.Identifier)) {
+      return this.tokens[this.pos++];
     }
-    if (this.current.type === TokenType.StringLiteral) {
-      const val = this.current.value;
-      this.advance();
-      return { type: "Literal", value: val, rawType: "string" };
+    throw new Error(`[Parser Error] Line ${this.tokens[this.pos].line}: Expected type annotation or 'void'`);
+  }
+
+  private match(type: TokenType): boolean {
+    if (this.check(type)) {
+      this.pos++;
+      return true;
     }
-    if (this.current.type === TokenType.NumberLiteral) {
-      const val = parseInt(this.current.value, 10);
-      this.advance();
-      return { type: "Literal", value: val, rawType: "number" };
-    }
-    if (this.current.type === TokenType.Identifier) {
-      const name = this.current.value;
-      this.advance();
-      return { type: "Identifier", name };
-    }
-    throw new Error(`[Line ${this.current.line}] Unexpected token '${this.current.value}'`);
+    return false;
+  }
+
+  private check(type: TokenType): boolean {
+    if (this.isAtEnd()) return false;
+    return this.tokens[this.pos].type === type;
+  }
+
+  private consume(type: TokenType, message: string): Token {
+    if (this.check(type)) return this.tokens[this.pos++];
+    throw new Error(`[Parser Error] Line ${this.tokens[this.pos].line}: ${message}`);
+  }
+
+  private isAtEnd(): boolean {
+    return this.tokens[this.pos].type === TokenType.EOF;
   }
 }
