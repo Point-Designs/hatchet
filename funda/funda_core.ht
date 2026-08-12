@@ -1,0 +1,42 @@
+include "funda.h.ht";
+include "funda_math.ht";
+
+pub struct Funda implements IFundaContext {
+    pub var width: int = 800;
+    pub var height: int = 600;
+    pub var isRunning: bool = false;
+
+    pub func init(width: int, height: int, title: string): bool {
+        this.width = width;
+        this.height = height;
+        this.isRunning = true;
+        
+        println($"[funda engine] initialized window: {title} ({width}x{height})");
+        return true;
+    }
+
+    pub func poll_events(): void {
+        // handled by native c/glfw or js event listener
+    }
+
+    pub func should_close(): bool {
+        return !this.isRunning;
+    }
+
+    pub func clear_background(color: Color): void {
+        // color clear pass
+    }
+
+    pub func draw_cube(pos: Vec3, size: Vec3, color: Color): void {
+        // render 3D cube
+    }
+
+    pub func swap_buffers(): void {
+        // present frame
+    }
+
+    pub func shutdown(): void {
+        this.isRunning = false;
+        println("[funda engine] shutting down...");
+    }
+}

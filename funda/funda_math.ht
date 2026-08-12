@@ -1,0 +1,16 @@
+include "funda.h.ht";
+
+pub valstruct Mat4 {
+    pub var m00: number = 1.0; pub var m01: number = 0.0; pub var m02: number = 0.0; pub var m03: number = 0.0;
+    pub var m10: number = 0.0; pub var m11: number = 1.0; pub var m12: number = 0.0; pub var m13: number = 0.0;
+    pub var m20: number = 0.0; pub var m21: number = 0.0; pub var m22: number = 1.0; pub var m23: number = 0.0;
+    pub var m30: number = 0.0; pub var m31: number = 0.0; pub var m32: number = 0.0; pub var m33: number = 1.0;
+}
+
+pub static func vec3_create(x: number, y: number, z: number): Vec3 {
+    var v: Vec3 = Vec3();
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    return v;
+}

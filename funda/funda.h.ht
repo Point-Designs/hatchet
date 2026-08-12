@@ -1,0 +1,20 @@
+pub valstruct Color {
+    pub var r: number = 1.0;
+    pub var g: number = 1.0;
+    pub var b: number = 1.0;
+    pub var a: number = 1.0;
+}
+
+pub valstruct Vec3 {
+    pub var x: number = 0.0;
+    pub var y: number = 0.0;
+    pub var z: number = 0.0;
+}
+
+pub interface IFundaContext {
+    func init(width: int, height: int, title: string): bool;
+    func poll_events(): void;
+    func should_close(): bool;
+    func swap_buffers(): void;
+    func shutdown(): void;
+}
